@@ -3,7 +3,7 @@ from dotenv import load_dotenv  # Для загрузки переменных �
 import os  # Для работы с операционной системой, получения переменных окружения
 import requests  # Для отправки HTTP-запросов
 import pandas as pd  # Для работы с данными в формате таблиц (DataFrame)
-from requests.exceptions import RequestException
+
 
 try:
     # Загружаем переменные окружения из файла .env
@@ -11,6 +11,9 @@ try:
 
     # Получаем API-ключ из переменной окружения
     API_KEY = os.getenv("DADATA_API_KEY")
+
+    if not API_KEY:
+        raise ValueError("API_KEY не найден в .env файле.")
 
     # URL API для получения данных по юрлицам
     API_URL = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/party_by"
@@ -22,112 +25,193 @@ try:
         "Authorization": f"Token {API_KEY}"  # Передаём API-ключ для авторизации
     }
 
-    # Данные, которые мы отправляем в запросе
-    data = {
-        "query": "0",  # Запрос, данный параметр обязательный
-        "count": 20,  # Ограничение на количество возвращаемых результатов, Dadata по данному запросу выводим максимум 20 результатов
-        "filters": [
-            {"type": "LEGAL"}  # Фильтруем только юридические лица
-        ]
-    }
 
-    # Отправляем POST-запрос с данными и заголовками
-    response = requests.post(API_URL, headers=headers, json=data) # json ответ, но результат в виде строки
+    # Функция для генерации запроса для Dadata по статусу юрлица
+    def generate_dadata_query(query, status, count=20):
+        """
+        Генерирует данные запроса для Dadata по заданному статусу.
 
-    # Проверяем, если запрос успешен (статус код 200)
-    if response.status_code == 200:
-        # Получаем данные в формате JSON, поскольку response - это строка
-        response_data = response.json()
+        param query: Запрос (обязательный параметр)
+        param status: Статус юридического лица (ACTIVE, LIQUIDATING, LIQUIDATED, BANKRUPT, SUSPENDED, REORGANIZING)
+        param count: Количество возвращаемых результатов (по умолчанию 20)
+        return: Словарь с параметрами запроса
+        """
+        # Список допустимых статусов
+        valid_statuses = ["ACTIVE", "LIQUIDATING", "LIQUIDATED", "BANKRUPT", "SUSPENDED", "REORGANIZING"]
+        
+        # Проверка, что переданный статус правильный
+        if status not in valid_statuses:
+            raise ValueError(f"Неверный статус: {status}. Доступные статусы: {valid_statuses}")
 
-        # Список для хранения отфильтрованных данных
-        filtered_data = []
+        # Формируем запрос в виде словаря
+        return {
+            "query": query,
+            "count": count,
+            "filters": [{"status": status}]
+        }
 
-        # Проходим по всем предложениям в ответе
+
+    # Генерация запросов для каждого статуса
+    query = "ООО"
+    data_active = generate_dadata_query(query, "ACTIVE")
+    data_liquidating = generate_dadata_query(query, "LIQUIDATING")
+    data_liquidated = generate_dadata_query(query, "LIQUIDATED")
+    data_bankrupt = generate_dadata_query(query, "BANKRUPT")
+    data_suspended = generate_dadata_query(query, "SUSPENDED")
+    data_reorganizing = generate_dadata_query(query, "REORGANIZING")
+
+    # Функция для отправки запроса к Dadata API
+    def response_dadata(data):
+        try:
+            response = requests.post(API_URL, headers=headers, json=data)  # Отправка POST-запроса
+            response.raise_for_status()  # Проверка на успешный ответ (код 2xx)
+            return response.json()  # Возвращаем JSON-ответ
+        except requests.exceptions.RequestException as e:
+            print(f"Ошибка при запросе: {e}")  # В случае ошибки выводим сообщение
+
+    # Получение данных для каждого статуса
+    response_active = response_dadata(data_active)
+    response_liquidating = response_dadata(data_liquidating)
+    response_liquidated = response_dadata(data_liquidated)
+    response_bankrupt = response_dadata(data_bankrupt)
+    response_suspended = response_dadata(data_suspended)
+    response_reorganizing = response_dadata(data_reorganizing)
+
+    # Функция для обработки ответа от Dadata
+    def response_processing(response_data):
+        """
+        Обрабатывает ответ Dadata, фильтрует нужные данные и возвращает DataFrame.
+        
+        param response_data: JSON-ответ от Dadata
+        return: DataFrame с отфильтрованными данными
+        """
+        # Проверка на корректность ответа
+        if not response_data or 'suggestions' not in response_data or not response_data['suggestions']:
+            print("Ошибка: данных нет в файле")
+            return pd.DataFrame()  # Возвращаем пустой DataFrame, если данные некорректны
+
+        filtered_data = []  # Список для хранения отфильтрованных данных
+
+        # Перебираем все предложения и выбираем необходимые поля
         for suggestion in response_data['suggestions']:
-            # Извлекаем данные из каждого предложения
             data = suggestion['data']
-            
-            # Добавляем нужные данные в список
             filtered_data.append({
-                'value': suggestion['value'],  # Название компании
-                'unp': data['unp'],  # УНП (уникальный номер предприятия)
-                'registration_date': data['registration_date'],  # Дата регистрации
-                'removal_date': data['removal_date'],  # Дата исключения из реестра
-                'status': data['status'],  # Статус компании
-                'full_name_ru': data['full_name_ru'],  # Полное название на русском
-                'trade_name_ru': data['trade_name_ru'],  # Торговое название на русском
-                'address': data['address'],  # Адрес компании
-                'oked': data['oked'],  # ОКЭД (код экономической деятельности)
-                'oked_name': data['oked_name']  # Описание ОКЭД
+                'value': suggestion.get('value', ''),  # Название компании
+                'unp': data.get('unp', ''),  # УНП
+                'registration_date': data.get('registration_date', ''),  # Дата регистрации
+                'removal_date': data.get('removal_date', ''),  # Дата исключения
+                'status': data.get('status', ''),  # Статус
+                'full_name_ru': data.get('full_name_ru', ''),  # Полное название
+                'trade_name_ru': data.get('trade_name_ru', ''),  # Торговое название
+                'address': data.get('address', ''),  # Адрес
+                'oked': data.get('oked', ''),  # ОКЭД
+                'oked_name': data.get('oked_name', '')  # Описание ОКЭД
             })
 
-        # Преобразуем отфильтрованные данные в DataFrame
-        df = pd.DataFrame(filtered_data)
+        return pd.DataFrame(filtered_data)  # Возвращаем DataFrame с данными
+    
+    # Обработка ответов для каждого статуса
+    df_active = response_processing(response_active)
+    df_liquidating = response_processing(response_liquidating)
+    df_liquidated = response_processing(response_liquidated)
+    df_bankrupt = response_processing(response_bankrupt)
+    df_suspended = response_processing(response_suspended)
+    df_reorganizing = response_processing(response_reorganizing)
 
-        # Сохраняем DataFrame в CSV-файл (без индекса и с правильной кодировкой)
-        df.to_csv('companies.csv', index=False, encoding='utf-8-sig')
+    
+    # Функция для сохранения DataFrame в CSV
+    def saving_csv(df, file_name):
+        """
+        Сохраняет DataFrame в CSV-файл с указанным именем.
 
+        param df: DataFrame для сохранения
+        param file_name: Имя файла для сохранения (без расширения)
+        """
+        df.to_csv(f'{file_name}.csv', index=False, encoding='utf-8-sig')  # Сохраняем в формате CSV без индекса и с кодировкой UTF-8 для корректного отображения символов
 
-
-        # Список городов для поиска
-        cities = ["Минск", "Витебск", "Могилев", "Гомель", "Брест", "Гродно"]
-
-        # Список областей для поиска
-        regions = ["Брестская", "Витебская", "Гомельская", "Гродненская", "Минская", "Могилёвская"]
-
-        # Функция для извлечения города или области из адреса
-        def extract_city_or_region(address):
-            found_region = None
-            found_city = None
-            
-            # Сначала ищем область
-            for region in regions:
-                if region in address:
-                    found_region = f"{region} область"
-                    break  # Прерываем цикл, так как область уже найдена
-
-            # Если область не найдена, ищем город
-            for city in cities:
-                if city in address:
-                    found_city = city
-                    break  # Прерываем цикл, так как город найден
-
-            # Если и город, и область найдены, решаем, что из этого возвращать
-            if found_region and found_city:
-                return found_city 
-            elif found_region:
-                return found_region
-            elif found_city:
-                return found_city
-
-            return "Не определено"  # Если ни город, ни область не найдены
-
-        # Применяем функцию к каждому значению в столбце "address" для извлечения города или области
-        df["city_or_region"] = df["address"].apply(extract_city_or_region)
-
-        # Подсчитываем количество зарегистрированных юрлиц по городам и областям
-        result = df["city_or_region"].value_counts()
-
-        # Записываем результат в файл 'result.txt'
-        result.to_csv('result.csv', header=True, index=True, sep='\t')
+    # Сохранение DataFrame для каждого статуса в соответствующие файлы
+    saving_csv(df_active, 'companies_active')
+    saving_csv(df_liquidating, 'companies_liquidating')
+    saving_csv(df_liquidated, 'companies_liquidated')
+    saving_csv(df_bankrupt, 'companies_bankrupt')
+    saving_csv(df_suspended, 'companies_suspended')
+    saving_csv(df_reorganizing, 'companies_reorganizing')
 
 
-except requests.RequestException as e:
-    # Ловим ошибки связанные с запросом (нет сети, таймаут и т.д.)
-    print("Ошибка:", e)
+
+    # Список городов для поиска
+    cities = ["Минск", "Витебск", "Могилев", "Гомель", "Брест", "Гродно"]
+
+    # Список областей для поиска
+    regions = ["Брестская", "Витебская", "Гомельская", "Гродненская", "Минская", "Могилёвская"]
+
+    # Функция для извлечения города или области из адреса
+    def extract_city_or_region(address):
+        if not address:
+            return "Адрес не определен"  # Если адрес пустой, возвращаем сообщение
+        found_region = None
+        found_city = None
+        
+        # Сначала ищем область
+        for region in regions:
+            if region in address:
+                found_region = f"{region} область"
+                break  # Прерываем цикл, так как область уже найдена
+
+        # Если область не найдена, ищем город
+        for city in cities:
+            if city in address:
+                found_city = city
+                break  # Прерываем цикл, так как город найден
+
+        # Если и город, и область найдены, решаем, что из этого возвращать
+        if found_region and found_city:
+            return found_city  # Если найден и город, и область, возвращаем город
+        elif found_region:
+            return found_region  # Если найдена только область
+        elif found_city:
+            return found_city  # Если найден только город
+
+        return "Не определено"  # Если ни город, ни область не найдены
+
+    # Функция для подсчета и сохранения количества городов и регионов
+    def resultation(df_name, file_name):
+        if df_name.empty:  # Проверяем, если DataFrame пустой
+            print(f"Файл {file_name} пустой. Пропускаем обработку.")  # Если файл пустой, выводим сообщение
+            return  # Прерываем выполнение функции, если DataFrame пустой
+
+        df_name["city_or_region"] = df_name["address"].apply(extract_city_or_region)  # Применяем функцию для извлечения города или региона из адреса
+        result = df_name["city_or_region"].value_counts()  # Подсчитываем количество уникальных значений для каждого города или региона
+        result.to_csv(f'{file_name}.csv', header=True, index=True, sep='\t')  # Сохраняем результат в CSV файл, разделяя значения табуляцией
+
+
+    # Применение функции resultation для каждого DataFrame
+    resultation(df_active, 'companies_active_result')
+    resultation(df_liquidating, 'companies_liquidating_result')
+    resultation(df_liquidated, 'companies_liquidated_result')
+    resultation(df_bankrupt, 'companies_bankrupt_result')
+    resultation(df_suspended, 'companies_suspended_result')
+    resultation(df_reorganizing, 'companies_reorganizing_result')
+
+
+
+except requests.exceptions.RequestException as e:
+    print(f"Ошибка запроса: {e}")  # Обработка ошибок запросов
 
 except KeyError as e:
-    # Ловим ошибки доступа к несуществующему ключу в данных
-    print("Ключ не найден в данных:", e)
+    print("Ключ не найден в данных:", e)  # Обработка ошибки, если в данных отсутствует ключ
 
 except ValueError as e:
-    # Ловим ошибки декодирования JSON
-    print("Ошибка при парсинге JSON:", e)
+    print("Ошибка при парсинге JSON:", e)  # Обработка ошибки при парсинге JSON
+
+    
 
 else:
-    print('Программа выполнена успешно')
+    print('Программа выполнена успешно')  # Сообщение об успешном завершении программы
 
 finally:
-    print('Процесс окончен')
+    print('Процесс окончен')  # Сообщение о завершении процесса
+
+
 
 
