@@ -9,15 +9,31 @@
 Анализ данных по городам и регионам.
 
 
-Структура файлов:
-companies_active.csv — активные компании.
-companies_liquidating.csv — компании в процессе ликвидации.
-companies_liquidated.csv — ликвидированные компании.
-companies_bankrupt.csv — компании, признанные банкротами.
-companies_suspended.csv — компании с приостановленной деятельностью.
-companies_reorganizing.csv — компании в процессе реорганизации.
-_result.csv — данные о городах и регионах для каждой категории.
+Структура файлов
 
+Основные файлы:
+project.py - главный исполняемый файл проекта, содержащий основной код.
+functions.py - модуль с вспомогательными функциями, используемыми в проекте.
+README.md - файл с описанием проекта (этот файл).
+LICENSE - файл с лицензионной информацией проекта.
+.gitignore - файл, определяющий, какие файлы и папки должны игнорироваться Git.
+env - файл с переменными окружения.
+
+Файлы данных (в директории data/)
+Исходные данные:
+companies_active.csv - данные о действующих компаниях.
+companies_bankrupt.csv - данные о банкротах.
+companies_liquidated.csv - данные о ликвидированных компаниях.
+companies_liquidating.csv - данные о компаниях в процессе ликвидации.
+companies_reorganizing.csv - данные о компаниях в процессе реорганизации.
+companies_suspended.csv - данные о приостановивших деятельность компаниях.
+
+Результаты обработки:
+companies_active_result.csv - результаты обработки данных о действующих компаниях.
+companies_bankrupt_result.csv - результаты обработки данных о банкротах.
+companies_liquidated_result.csv - результаты обработки данных о ликвидированных компаниях.
+companies_liquidating_result.csv - результаты обработки данных о компаниях в процессе ликвидации.
+companies_reorganizing_result.csv - результаты обработки данных о компаниях в процессе реорганизации.
 
 Библиотеки: requests, pandas, python-dotenv, os
 
@@ -29,4 +45,3 @@ pip install -r requirements.txt
 Использование:
 Создайте файл .env и добавьте ваш API ключ:
 DADATA_API_KEY=your_api_key
-

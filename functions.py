@@ -1,3 +1,7 @@
+import requests  # Для отправки HTTP-запросов
+import pandas as pd  # Для работы с данными в формате таблиц (DataFrame)
+print("functions.py подключен!")
+
 # Функция для генерации запроса для Dadata по статусу юрлица
 def generate_dadata_query(query, status, count=20):
     """
@@ -22,29 +26,50 @@ def generate_dadata_query(query, status, count=20):
         "filters": [{"status": status}]
     }
 
-# Функция для отправки запроса к Dadata API
-def response_dadata(data):
+def response_dadata(data, api_url, headers):
+    """
+    Отправляет POST-запрос к Dadata API и возвращает JSON-ответ.
+
+    param data: Словарь с параметрами запроса
+    param api_url: URL-адрес API
+    param headers: Заголовки HTTP-запроса (включают API-ключ)
+    return: JSON-ответ или None, если возникла ошибка
+    """
     try:
-        response = requests.post(API_URL, headers=headers, json=data)  # Отправка POST-запроса
-        response.raise_for_status()  # Проверка на успешный ответ (код 2xx)
-        return response.json()  # Возвращаем JSON-ответ
+        # Отправляем POST-запрос
+        response = requests.post(api_url, headers=headers, json=data)
+
+        # Проверяем, успешен ли ответ (статус-код 2xx)
+        response.raise_for_status()
+
+        # Возвращаем JSON-ответ
+        return response.json()
+
     except requests.exceptions.RequestException as e:
-        print(f"Ошибка при запросе: {e}")  # В случае ошибки выводим сообщение
+        # Выводим сообщение об ошибке, если запрос не удался
+        print(f"Ошибка запроса. Не удалось получить данные от Dadata: {e}")
+        return None  # Возвращаем None при ошибке
 
 # Функция для обработки ответа от Dadata
 def response_processing(response_data):
     """
-    Обрабатывает ответ Dadata, фильтрует нужные данные и возвращает DataFrame.
-        
-    param response_data: JSON-ответ от Dadata
-    return: DataFrame с отфильтрованными данными
-    """
-    # Проверка на корректность ответа
-    if not response_data or 'suggestions' not in response_data or not response_data['suggestions']:
-        print("Ошибка: данных нет в файле")
-        return pd.DataFrame()  # Возвращаем пустой DataFrame, если данные некорректны
+    Обрабатывает JSON-ответ от Dadata и извлекает нужные поля.
 
-    filtered_data = []  # Список для хранения отфильтрованных данных
+    param response_data: JSON-ответ от API
+    return: pandas.DataFrame с извлечёнными данными или пустой DataFrame при ошибке
+    """
+    # Проверка: если данные отсутствуют (None), выводим предупреждение
+    if response_data is None:
+        print("Ошибка. Ответ от API не получен или пуст.")
+        return pd.DataFrame()
+
+    # Проверка: если структура ответа не соответствует ожиданиям
+    if 'suggestions' not in response_data or not response_data['suggestions']:
+        print("Ошибка. В ответе нет блока 'suggestions' или он пуст.")
+        return pd.DataFrame()
+
+    # Список для сбора отфильтрованных данных
+    filtered_data = []
 
     # Перебираем все предложения и выбираем необходимые поля
     for suggestion in response_data['suggestions']:
@@ -61,7 +86,8 @@ def response_processing(response_data):
             'oked': data.get('oked', ''),  # ОКЭД
             'oked_name': data.get('oked_name', '')  # Описание ОКЭД
         })
-    return pd.DataFrame(filtered_data)  # Возвращаем DataFrame с данными
+     # Преобразуем список словарей в DataFrame и возвращаем его
+    return pd.DataFrame(filtered_data)
 
 # Функция для сохранения DataFrame в CSV
 def saving_csv(df, file_name):
@@ -74,7 +100,7 @@ def saving_csv(df, file_name):
     df.to_csv(f'/Users/ilonakononovic/PycharmProjects/DaData-project/data/{file_name}.csv', index=False, encoding='utf-8-sig')  # Сохраняем в формате CSV без индекса и с кодировкой UTF-8 для корректного отображения символов
     
 # Функция для извлечения города или области из адреса
-def extract_city_or_region(address):
+def extract_city_or_region(address, cities, regions):
     if not address:
         return "Адрес не определен"  # Если адрес пустой, возвращаем сообщение
     found_region = None
@@ -103,11 +129,16 @@ def extract_city_or_region(address):
     return "Не определено"  # Если ни город, ни область не найдены
 
 # Функция для подсчета и сохранения количества городов и регионов
-def resultation(df_name, file_name):
+def resultation(df_name, file_name, cities, regions):
     if df_name.empty:  # Проверяем, если DataFrame пустой
         print(f"Файл {file_name} пустой. Пропускаем обработку.")  # Если файл пустой, выводим сообщение
         return  # Прерываем выполнение функции, если DataFrame пустой
 
-    df_name["city_or_region"] = df_name["address"].apply(extract_city_or_region)  # Применяем функцию для извлечения города или региона из адреса
-    result = df_name["city_or_region"].value_counts()  # Подсчитываем количество уникальных значений для каждого города или региона
-    result.to_csv(f'/Users/ilonakononovic/PycharmProjects/DaData-project/data/{file_name}.csv', header=True, index=True, sep='\t')  # Сохраняем результат в CSV файл, разделяя значения табуляцией
+    # Применяем функцию для извлечения города или региона из адреса
+    df_name["city_or_region"] = df_name["address"].apply(lambda addr: extract_city_or_region(addr, cities, regions))
+    
+    # Подсчитываем количество уникальных значений для каждого города или региона
+    result = df_name["city_or_region"].value_counts()  
+    
+    # Сохраняем результат в CSV файл, разделяя значения табуляцией
+    result.to_csv(f'/Users/ilonakononovic/PycharmProjects/DaData-project/data/{file_name}.csv', header=True, index=True, sep='\t')
