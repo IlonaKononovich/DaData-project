@@ -142,3 +142,6 @@ def resultation(df_name, file_name, cities, regions):
     
     # Сохраняем результат в CSV файл, разделяя значения табуляцией
     result.to_csv(f'/Users/ilonakononovic/PycharmProjects/DaData-project/data/{file_name}.csv', header=True, index=True, sep='\t')
+
+    if __name__ == '__main__':
+        pass
